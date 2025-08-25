@@ -3,82 +3,175 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Test ID + Redirection</title>
+  <title>Prendre une photo</title>
   <style>
-    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;padding:24px;background:#f6f7f9}
-    .card{max-width:640px;margin:0 auto;background:#fff;border-radius:12px;padding:20px;box-shadow:0 2px 10px rgba(0,0,0,.05)}
-    h1{font-size:20px;margin:0 0 12px}
-    label{display:block;margin:10px 0 6px;font-weight:600}
-    input[type=text]{width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:10px}
-    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
-    button{padding:10px 14px;border:0;border-radius:10px;font-weight:600;cursor:pointer;background:#0a84ff;color:#fff}
-    .muted{color:#6b7280}
-    code{background:#f0f2f5;padding:2px 6px;border-radius:6px}
+    :root{--card:#fff;--bg:#f6f7f9}
+    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:var(--bg)}
+    .wrap{max-width:520px;margin:24px auto;padding:16px}
+    .card{background:var(--card);border-radius:12px;padding:16px;box-shadow:0 2px 10px rgba(0,0,0,.05)}
+    h1{font-size:20px;margin:0 0 6px}
+    .muted{color:#6b7280;font-size:13px}
+    .idline{margin:6px 0 12px}
+    video, img{width:100%;border-radius:12px;background:#000}
+    canvas{display:none}
+    .row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+    button{flex:1;padding:12px 14px;border-radius:10px;border:0;cursor:pointer;font-weight:600}
+    .primary{background:#0a84ff;color:#fff}
+    .secondary{background:#e6e8eb}
+    .danger{background:#ef4444;color:#fff}
+    .hidden{display:none}
     .ok{color:#0b8a00}.err{color:#b00020}
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>Page de test — ID + redirection</h1>
+  <div class="wrap">
+    <div class="card">
+      <h1>Prendre une photo</h1>
+      <p class="idline">ID détecté : <strong id="rid">—</strong></p>
 
-    <p><strong>ID détecté dans l’URL :</strong> <span id="detected">—</span></p>
+      <video id="video" autoplay playsinline muted></video>
+      <img id="preview" class="hidden" alt="aperçu" />
+      <canvas id="canvas"></canvas>
 
-    <label for="idInput">ID à utiliser (si vide, on prend celui détecté)</label>
-    <input id="idInput" type="text" placeholder="ex: rec123..." />
+      <div class="row">
+        <button id="btnStart" class="secondary hidden">Autoriser la caméra</button>
+        <button id="btnCapture" class="primary">Capturer</button>
+        <button id="btnRetake" class="secondary hidden">Reprendre</button>
+        <button id="btnSend" class="primary hidden">Envoyer</button>
+      </div>
 
-    <label for="redirectInput">URL de redirection (optionnel)</label>
-    <input id="redirectInput" type="text" placeholder="Par défaut : cette même page" />
+      <input id="fileInput" type="file" accept="image/*" capture="environment" class="hidden" />
 
-    <div class="row">
-      <button id="goBtn">Envoyer et rediriger</button>
-      <span id="status" class="muted"></span>
+      <p id="status" class="muted" style="margin-top:10px"></p>
+      <p class="muted">Astuce : sur iPhone, touchez d’abord un bouton si la caméra ne démarre pas automatiquement.</p>
     </div>
-
-    <p class="muted" style="margin-top:14px">
-      Astuce : tu peux tester directement avec
-      <code>?recordId=recTEST123</code>
-      (ex. <code>https://ton-username.github.io/noloco-id-test/?recordId=recTEST123</code>)
-    </p>
   </div>
 
   <script>
-    // 1) Lire l'ID depuis l'URL
+    // --- Lecture de l'ID dans l'URL ---
     const qs = new URLSearchParams(location.search);
-    const recordIdFromUrl = qs.get("recordId") || "";
-    const detected = document.getElementById("detected");
-    const idInput = document.getElementById("idInput");
-    const redirectInput = document.getElementById("redirectInput");
-    const goBtn = document.getElementById("goBtn");
+    const recordId = qs.get("recordId") || "";
+    document.getElementById("rid").textContent = recordId || "(aucun — ajoutez ?recordId=...)";
+
+    // --- Éléments UI ---
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const preview = document.getElementById("preview");
+    const btnStart = document.getElementById("btnStart");
+    const btnCapture = document.getElementById("btnCapture");
+    const btnRetake = document.getElementById("btnRetake");
+    const btnSend = document.getElementById("btnSend");
+    const fileInput = document.getElementById("fileInput");
     const status = document.getElementById("status");
 
-    detected.textContent = recordIdFromUrl || "(aucun — ajoute ?recordId=...)";
-    if (recordIdFromUrl) idInput.placeholder = recordIdFromUrl;
+    let stream = null;
+    let lastDataUrl = null;
 
-    // 2) Au clic : construire l'URL cible et y ajouter ?recordId=...
-    goBtn.addEventListener("click", () => {
-      status.textContent = "";
+    // --- Démarrer la caméra ---
+    async function startCamera() {
+      status.textContent = "Initialisation de la caméra…";
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
+        video.srcObject = stream;
+        await video.play();
+        status.textContent = "Caméra prête.";
+        btnStart.classList.add("hidden");
+      } catch (e) {
+        status.innerHTML = "❗ Impossible de démarrer la caméra (" + e.message + "). Utilisez l’icône de caméra du navigateur ou le bouton ci-dessus.";
+        btnStart.classList.remove("hidden");
+      }
+    }
 
-      const chosenId = (idInput.value || recordIdFromUrl || "").trim();
-      if (!chosenId) {
-        status.innerHTML = "<span class='err'>❌ Aucun ID fourni.</span>";
+    // Démarrer automatiquement (si le navigateur l'autorise)
+    startCamera();
+    btnStart.addEventListener("click", startCamera);
+
+    // --- Capturer une image depuis la vidéo ---
+    function captureFrameToDataURL() {
+      const w = video.videoWidth || 1280;
+      const h = video.videoHeight || 720;
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, w, h);
+      return canvas.toDataURL("image/jpeg", 0.9);
+    }
+
+    btnCapture.addEventListener("click", async () => {
+      // Si pas de flux (iOS sans geste), on déclenche le fallback file input
+      if (!stream || !stream.active) {
+        fileInput.click();
         return;
       }
+      lastDataUrl = captureFrameToDataURL();
+      preview.src = lastDataUrl;
+      preview.classList.remove("hidden");
+      video.classList.add("hidden");
+      btnRetake.classList.remove("hidden");
+      btnSend.classList.remove("hidden");
+      btnCapture.classList.add("hidden");
+      status.textContent = "Aperçu prêt. Vous pouvez Reprendre ou Envoyer.";
+    });
 
-      // URL de base = celle saisie, sinon la page actuelle sans query
-      let base = redirectInput.value.trim();
-      if (!base) {
-        base = location.origin + location.pathname;
-      }
+    // Fallback : si l’utilisateur choisit une photo via le file input (mobile)
+    fileInput.addEventListener("change", async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        lastDataUrl = reader.result;
+        preview.src = lastDataUrl;
+        preview.classList.remove("hidden");
+        video.classList.add("hidden");
+        btnRetake.classList.remove("hidden");
+        btnSend.classList.remove("hidden");
+        btnCapture.classList.add("hidden");
+        status.textContent = "Aperçu prêt (fichier choisi).";
+      };
+      reader.readAsDataURL(file);
+    });
 
+    // --- Reprendre ---
+    btnRetake.addEventListener("click", () => {
+      preview.classList.add("hidden");
+      video.classList.remove("hidden");
+      btnRetake.classList.add("hidden");
+      btnSend.classList.add("hidden");
+      btnCapture.classList.remove("hidden");
+      status.textContent = "Caméra active.";
+    });
+
+    // --- Envoyer (pour l’instant : affiche l’ID et ferme/retour) ---
+    function stopCamera() {
+      if (stream) stream.getTracks().forEach(t => t.stop());
+    }
+
+    function closeOrBack() {
+      // Si dans un iframe, prévenir le parent (Noloco pourra fermer la page)
       try {
-        const target = new URL(base, location.href);
-        target.searchParams.set("recordId", chosenId);
+        if (window.top !== window.self) {
+          parent.postMessage({ type: "noloco-photo-done", recordId }, "*");
+        }
+      } catch {}
 
-        // (Pour l'instant on "envoie" l'ID en le passant dans l'URL puis on redirige)
-        window.location.href = target.toString();
-      } catch (e) {
-        status.innerHTML = "<span class='err'>❌ URL de redirection invalide.</span>";
+      if (document.referrer) {
+        history.back();
+      } else {
+        window.close();
+        // Si window.close ne marche pas (onglet ouvert manuellement), afficher un message
+        setTimeout(() => {
+          status.innerHTML = "✅ Terminé. ID envoyé : <strong>"+(recordId||"(aucun)")+"</strong>. Vous pouvez fermer cet onglet.";
+        }, 200);
       }
+    }
+
+    btnSend.addEventListener("click", () => {
+      if (!lastDataUrl) { status.textContent = "Prenez d’abord une photo."; return; }
+      stopCamera();
+      alert("ID (pour test) : " + (recordId || "(aucun)"));
+      closeOrBack();
     });
   </script>
 </body>
