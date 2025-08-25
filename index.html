@@ -85,16 +85,27 @@
   </main>
 
   <script>
+    /* ---------- Webhook config ---------- */
+    const WEBHOOKS = {
+      // match on lowercase; add more schools later if needed
+      "itis": "https://hook.eu2.make.com/otytijlggkxvuro0y7r63yb3sldhst0jv"
+    };
+    const DEFAULT_HOOK = ""; // keep empty so we don't send to the wrong place by mistake
+    const HOOK_TOKEN = "";   // optional shared secret (also add a filter in Make)
+    /* ----------------------------------- */
+
     // --- Read params ---
     const qs = new URLSearchParams(location.search);
     const recordId = qs.get("recordId") || "";
 
-    // Use separate params for first & last names. Also support common fallbacks.
+    // Separate first/last names; support common fallbacks
     const first = qs.get("name") || qs.get("first") || qs.get("prenom") || "";
     const last  = qs.get("family") || qs.get("last") || qs.get("nom") || "";
     const displayName = [first, last].filter(Boolean).join(" ");
 
-    const ecole = qs.get("ecole") || ""; // used later to route to the correct webhook
+    const ecole = (qs.get("ecole") || "").trim();
+    const ecoleKey = ecole.toLowerCase();
+    const HOOK_URL = WEBHOOKS[ecoleKey] || DEFAULT_HOOK;
 
     // Show overlays if provided
     const nameplate = document.getElementById("nameplate");
@@ -117,6 +128,7 @@
 
     let stream = null;
     let lastDataUrl = null;
+    let sending = false;
 
     // Start camera
     async function startCamera() {
@@ -182,6 +194,18 @@
     // Stop camera
     function stopCamera() { if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } }
 
+    // dataURL -> Blob
+    async function dataUrlToBlob(dataUrl) {
+      try { const r = await fetch(dataUrl); return await r.blob(); }
+      catch {
+        const parts = dataUrl.split(',');
+        const mime = parts[0].match(/:(.*?);/)[1];
+        const bstr = atob(parts[1]); let n = bstr.length; const u8 = new Uint8Array(n);
+        while (n--) u8[n] = bstr.charCodeAt(n);
+        return new Blob([u8], { type: mime });
+      }
+    }
+
     // Smart close
     function smartClose() {
       try { if (window.top !== window.self) parent.postMessage({ type:"noloco-close-request", recordId, ecole }, "*"); } catch {}
@@ -191,13 +215,46 @@
       location.replace("about:blank");
     }
 
-    // Send (for now: just show ID + school, then close)
-    btnSend.addEventListener("click", () => {
-      if (!lastDataUrl) return;
-      stopCamera();
-      alert("ID (test) : " + (recordId || "(aucun)") + (ecole ? " | École : " + ecole : ""));
-      smartClose();
-    });
+    // Send to Make
+    async function sendToMake() {
+      if (sending) return;
+      if (!HOOK_URL) { alert("Aucun webhook configuré pour cette école."); return; }
+      if (!HOOK_URL.startsWith("https://hook.make.com/") && !HOOK_URL.startsWith("https://hook.eu2.make.com/")) {
+        alert("Webhook Make invalide."); return;
+      }
+      if (!lastDataUrl) { alert("Prenez d’abord une photo."); return; }
+
+      try {
+        sending = true;
+        btnSend.disabled = true;
+        btnSend.textContent = "Envoi…";
+
+        const blob = await dataUrlToBlob(lastDataUrl);
+        const fd = new FormData();
+        fd.append("file", blob, `photo-${recordId || "noid"}-${Date.now()}.jpg`);
+        fd.append("recordId", recordId);
+        fd.append("first", first);
+        fd.append("family", last);
+        fd.append("fullName", displayName);
+        fd.append("ecole", ecole);
+        fd.append("timestamp", new Date().toISOString());
+        if (HOOK_TOKEN) fd.append("token", HOOK_TOKEN);
+
+        const res = await fetch(HOOK_URL, { method: "POST", body: fd, credentials: "omit" });
+        if (!res.ok) throw new Error("Réponse non OK (" + res.status + ")");
+
+        stopCamera();
+        alert("Photo envoyée !");
+        smartClose();
+      } catch (err) {
+        alert("Échec de l’envoi : " + err.message);
+        btnSend.disabled = false;
+        btnSend.textContent = "Envoyer";
+        sending = false;
+      }
+    }
+
+    btnSend.addEventListener("click", sendToMake);
   </script>
 </body>
 </html>
