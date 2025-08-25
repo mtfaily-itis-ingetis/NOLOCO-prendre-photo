@@ -18,7 +18,6 @@
     button{flex:1;padding:12px 14px;border-radius:10px;border:0;cursor:pointer;font-weight:600}
     .primary{background:#0a84ff;color:#fff}
     .secondary{background:#e6e8eb}
-    .danger{background:#ef4444;color:#fff}
     .hidden{display:none}
     .ok{color:#0b8a00}.err{color:#b00020}
   </style>
@@ -143,35 +142,40 @@
       status.textContent = "Caméra active.";
     });
 
-    // --- Envoyer (pour l’instant : affiche l’ID et ferme/retour) ---
+    // --- Arrêt caméra ---
     function stopCamera() {
       if (stream) stream.getTracks().forEach(t => t.stop());
     }
 
-    function closeOrBack() {
-      // Si dans un iframe, prévenir le parent (Noloco pourra fermer la page)
+    // --- Fermeture intelligente de l’onglet ---
+    function smartClose() {
+      // 1) Si dans un iframe (ex: Noloco), demander au parent de fermer
       try {
         if (window.top !== window.self) {
-          parent.postMessage({ type: "noloco-photo-done", recordId }, "*");
+          parent.postMessage({ type: "noloco-close-request", recordId }, "*");
         }
       } catch {}
 
-      if (document.referrer) {
+      // 2) Essayer de fermer l'onglet (autorisé si ouvert via window.open)
+      try { window.opener = null; } catch {}
+      window.close();
+
+      // 3) Fallback : revenir en arrière s'il y a un historique
+      if (history.length > 1) {
         history.back();
-      } else {
-        window.close();
-        // Si window.close ne marche pas (onglet ouvert manuellement), afficher un message
-        setTimeout(() => {
-          status.innerHTML = "✅ Terminé. ID envoyé : <strong>"+(recordId||"(aucun)")+"</strong>. Vous pouvez fermer cet onglet.";
-        }, 200);
+        return;
       }
+
+      // 4) Fallback final : vider l'onglet
+      location.replace("about:blank");
     }
 
+    // --- Envoyer (pour l’instant : affiche l’ID puis ferme) ---
     btnSend.addEventListener("click", () => {
       if (!lastDataUrl) { status.textContent = "Prenez d’abord une photo."; return; }
       stopCamera();
-      alert("ID (pour test) : " + (recordId || "(aucun)"));
-      closeOrBack();
+      alert("ID (test) : " + (recordId || "(aucun)"));
+      smartClose();
     });
   </script>
 </body>
