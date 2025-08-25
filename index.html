@@ -9,37 +9,17 @@
     .stage{position:fixed;inset:0;height:100dvh;width:100vw;overflow:hidden;background:#000}
     video, img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
     canvas{display:none}
-
-    /* Top overlays: name (left) + school (right) */
-    .topbar{
-      position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top) + 10px);
-      display:flex;justify-content:space-between;align-items:center;gap:8px;padding:0 12px;z-index:6
-    }
-    .nameplate{
-      max-width:70vw;padding:10px 14px;border-radius:999px;
-      background:rgba(0,0,0,.45);backdrop-filter:blur(6px);
-      color:#fff;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis
-    }
-    .schooltag{
-      padding:8px 12px;border-radius:999px;
-      background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);
-      color:#fff;font-weight:600;white-space:nowrap;max-width:26vw;overflow:hidden;text-overflow:ellipsis
-    }
+    .topbar{position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top) + 10px);display:flex;justify-content:space-between;align-items:center;gap:8px;padding:0 12px;z-index:6}
+    .nameplate{max-width:70vw;padding:10px 14px;border-radius:999px;background:rgba(0,0,0,.45);backdrop-filter:blur(6px);color:#fff;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .schooltag{padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);color:#fff;font-weight:600;white-space:nowrap;max-width:26vw;overflow:hidden;text-overflow:ellipsis}
     .hidden{display:none !important}
-
-    /* Bottom gradient + controls */
-    .bottom-fade{position:absolute;left:0;right:0;bottom:0;height:32dvh;
-      background:linear-gradient(180deg,rgba(0,0,0,0) 0%,rgba(0,0,0,.55) 60%,rgba(0,0,0,.9) 100%);pointer-events:none}
-    .controls{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 18px);
-      display:flex;justify-content:center;align-items:center;gap:12px;padding:0 16px;z-index:5}
+    .bottom-fade{position:absolute;left:0;right:0;bottom:0;height:32dvh;background:linear-gradient(180deg,rgba(0,0,0,0) 0%,rgba(0,0,0,.55) 60%,rgba(0,0,0,.9) 100%);pointer-events:none}
+    .controls{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 18px);display:flex;justify-content:center;align-items:center;gap:12px;padding:0 16px;z-index:5}
     .pill{padding:12px 16px;border:0;border-radius:999px;font-weight:700;cursor:pointer}
     .primary{background:#0a84ff;color:#fff}
     .neutral{background:rgba(255,255,255,.9);color:#111}
-    .shutter{width:78px;height:78px;border-radius:50%;border:6px solid rgba(255,255,255,.85);
-      background:rgba(255,255,255,.92);cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+    .shutter{width:78px;height:78px;border-radius:50%;border:6px solid rgba(255,255,255,.85);background:rgba(255,255,255,.92);cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.35)}
     .row{display:flex;gap:10px;align-items:center}
-
-    /* Permission prompt */
     .center-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:6}
     .center-card{background:rgba(0,0,0,.55);backdrop-filter:blur(6px);padding:18px 20px;border-radius:12px;color:#fff}
     .center-card button{margin-top:10px}
@@ -47,7 +27,6 @@
 </head>
 <body>
   <main class="stage">
-    <!-- Top overlays -->
     <div class="topbar">
       <div id="nameplate" class="nameplate hidden"></div>
       <div id="schooltag" class="schooltag hidden"></div>
@@ -59,12 +38,10 @@
 
     <div class="bottom-fade" aria-hidden="true"></div>
 
-    <!-- Live controls -->
     <div id="liveControls" class="controls">
       <button id="btnCapture" class="shutter" aria-label="Capturer"></button>
     </div>
 
-    <!-- Review controls -->
     <div id="reviewControls" class="controls hidden">
       <div class="row">
         <button id="btnRetake" class="pill neutral">Reprendre</button>
@@ -72,10 +49,8 @@
       </div>
     </div>
 
-    <!-- Hidden elements -->
     <input id="fileInput" type="file" accept="image/*" capture="environment" class="hidden" />
 
-    <!-- Permission prompt -->
     <div id="blocked" class="center-overlay hidden">
       <div class="center-card">
         <div>Autorise l’accès à la caméra pour continuer.</div>
@@ -87,27 +62,23 @@
   <script>
     /* ---------- Webhook config ---------- */
     const WEBHOOKS = {
-      // match on lowercase; add more schools later if needed
       "itis": "https://hook.eu2.make.com/otytijlggkxvuro0y7r63yb3sldhst0jv"
     };
-    const DEFAULT_HOOK = ""; // keep empty so we don't send to the wrong place by mistake
-    const HOOK_TOKEN = "";   // optional shared secret (also add a filter in Make)
+    const DEFAULT_HOOK = "";        // keep empty to avoid misrouting
+    const HOOK_TOKEN = "";          // optional shared secret; add a filter in Make if you set it
     /* ----------------------------------- */
 
     // --- Read params ---
     const qs = new URLSearchParams(location.search);
     const recordId = qs.get("recordId") || "";
-
-    // Separate first/last names; support common fallbacks
     const first = qs.get("name") || qs.get("first") || qs.get("prenom") || "";
     const last  = qs.get("family") || qs.get("last") || qs.get("nom") || "";
     const displayName = [first, last].filter(Boolean).join(" ");
-
     const ecole = (qs.get("ecole") || "").trim();
     const ecoleKey = ecole.toLowerCase();
     const HOOK_URL = WEBHOOKS[ecoleKey] || DEFAULT_HOOK;
 
-    // Show overlays if provided
+    // Overlays
     const nameplate = document.getElementById("nameplate");
     const schooltag = document.getElementById("schooltag");
     if (displayName) { nameplate.textContent = displayName; nameplate.classList.remove("hidden"); }
@@ -157,7 +128,6 @@
       return canvas.toDataURL("image/jpeg", 0.9);
     }
 
-    // Transitions
     function enterReview(dataUrl) {
       lastDataUrl = dataUrl;
       preview.src = lastDataUrl;
@@ -173,13 +143,11 @@
       liveControls.classList.remove("hidden");
     }
 
-    // Capture
     btnCapture.addEventListener("click", () => {
       if (!stream || !stream.active) { fileInput.click(); return; }
       enterReview(captureFrameToDataURL());
     });
 
-    // Fallback chooser
     fileInput.addEventListener("change", (e) => {
       const file = e.target.files && e.target.files[0];
       if (!file) return;
@@ -188,13 +156,10 @@
       reader.readAsDataURL(file);
     });
 
-    // Retake
     btnRetake.addEventListener("click", backToLive);
 
-    // Stop camera
     function stopCamera() { if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } }
 
-    // dataURL -> Blob
     async function dataUrlToBlob(dataUrl) {
       try { const r = await fetch(dataUrl); return await r.blob(); }
       catch {
@@ -206,7 +171,6 @@
       }
     }
 
-    // Smart close
     function smartClose() {
       try { if (window.top !== window.self) parent.postMessage({ type:"noloco-close-request", recordId, ecole }, "*"); } catch {}
       try { window.opener = null; } catch {}
@@ -215,13 +179,9 @@
       location.replace("about:blank");
     }
 
-    // Send to Make
     async function sendToMake() {
       if (sending) return;
       if (!HOOK_URL) { alert("Aucun webhook configuré pour cette école."); return; }
-      if (!HOOK_URL.startsWith("https://hook.make.com/") && !HOOK_URL.startsWith("https://hook.eu2.make.com/")) {
-        alert("Webhook Make invalide."); return;
-      }
       if (!lastDataUrl) { alert("Prenez d’abord une photo."); return; }
 
       try {
@@ -240,8 +200,8 @@
         fd.append("timestamp", new Date().toISOString());
         if (HOOK_TOKEN) fd.append("token", HOOK_TOKEN);
 
-        const res = await fetch(HOOK_URL, { method: "POST", body: fd, credentials: "omit" });
-        if (!res.ok) throw new Error("Réponse non OK (" + res.status + ")");
+        // no-cors avoids CORS errors; we don't need to read the response
+        await fetch(HOOK_URL, { method: "POST", body: fd, mode: "no-cors", credentials: "omit", cache: "no-store" });
 
         stopCamera();
         alert("Photo envoyée !");
