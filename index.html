@@ -62,10 +62,10 @@
   <script>
     /* ---------- Webhook config ---------- */
     const WEBHOOKS = {
-      "itis": "https://hook.eu2.make.com/otytijlggkxvuro0y7r63yb3sldhst0jv"
+      "itis": "https://hook.eu2.make.com/otytijlggkxvuro0y7r63yb3sldhst0j"
     };
-    const DEFAULT_HOOK = "";        // keep empty to avoid misrouting
-    const HOOK_TOKEN = "";          // optional shared secret; add a filter in Make if you set it
+    const DEFAULT_HOOK = "";
+    const HOOK_TOKEN = ""; // optional; if used, add a filter in Make to check `token`
     /* ----------------------------------- */
 
     // --- Read params ---
@@ -101,7 +101,6 @@
     let lastDataUrl = null;
     let sending = false;
 
-    // Start camera
     async function startCamera() {
       blocked.classList.add("hidden");
       try {
@@ -118,7 +117,6 @@
     startCamera();
     btnTryAgain.addEventListener("click", startCamera);
 
-    // Capture to dataURL
     function captureFrameToDataURL() {
       const w = video.videoWidth || 1280;
       const h = video.videoHeight || 720;
@@ -147,7 +145,6 @@
       if (!stream || !stream.active) { fileInput.click(); return; }
       enterReview(captureFrameToDataURL());
     });
-
     fileInput.addEventListener("change", (e) => {
       const file = e.target.files && e.target.files[0];
       if (!file) return;
@@ -155,7 +152,6 @@
       reader.onload = () => enterReview(reader.result);
       reader.readAsDataURL(file);
     });
-
     btnRetake.addEventListener("click", backToLive);
 
     function stopCamera() { if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } }
@@ -200,7 +196,7 @@
         fd.append("timestamp", new Date().toISOString());
         if (HOOK_TOKEN) fd.append("token", HOOK_TOKEN);
 
-        // no-cors avoids CORS errors; we don't need to read the response
+        // fire-and-forget to avoid CORS issues
         await fetch(HOOK_URL, { method: "POST", body: fd, mode: "no-cors", credentials: "omit", cache: "no-store" });
 
         stopCamera();
