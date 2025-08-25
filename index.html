@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Test ID + Redirection</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;padding:24px;background:#f6f7f9}
+    .card{max-width:640px;margin:0 auto;background:#fff;border-radius:12px;padding:20px;box-shadow:0 2px 10px rgba(0,0,0,.05)}
+    h1{font-size:20px;margin:0 0 12px}
+    label{display:block;margin:10px 0 6px;font-weight:600}
+    input[type=text]{width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:10px}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
+    button{padding:10px 14px;border:0;border-radius:10px;font-weight:600;cursor:pointer;background:#0a84ff;color:#fff}
+    .muted{color:#6b7280}
+    code{background:#f0f2f5;padding:2px 6px;border-radius:6px}
+    .ok{color:#0b8a00}.err{color:#b00020}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Page de test — ID + redirection</h1>
+
+    <p><strong>ID détecté dans l’URL :</strong> <span id="detected">—</span></p>
+
+    <label for="idInput">ID à utiliser (si vide, on prend celui détecté)</label>
+    <input id="idInput" type="text" placeholder="ex: rec123..." />
+
+    <label for="redirectInput">URL de redirection (optionnel)</label>
+    <input id="redirectInput" type="text" placeholder="Par défaut : cette même page" />
+
+    <div class="row">
+      <button id="goBtn">Envoyer et rediriger</button>
+      <span id="status" class="muted"></span>
+    </div>
+
+    <p class="muted" style="margin-top:14px">
+      Astuce : tu peux tester directement avec
+      <code>?recordId=recTEST123</code>
+      (ex. <code>https://ton-username.github.io/noloco-id-test/?recordId=recTEST123</code>)
+    </p>
+  </div>
+
+  <script>
+    // 1) Lire l'ID depuis l'URL
+    const qs = new URLSearchParams(location.search);
+    const recordIdFromUrl = qs.get("recordId") || "";
+    const detected = document.getElementById("detected");
+    const idInput = document.getElementById("idInput");
+    const redirectInput = document.getElementById("redirectInput");
+    const goBtn = document.getElementById("goBtn");
+    const status = document.getElementById("status");
+
+    detected.textContent = recordIdFromUrl || "(aucun — ajoute ?recordId=...)";
+    if (recordIdFromUrl) idInput.placeholder = recordIdFromUrl;
+
+    // 2) Au clic : construire l'URL cible et y ajouter ?recordId=...
+    goBtn.addEventListener("click", () => {
+      status.textContent = "";
+
+      const chosenId = (idInput.value || recordIdFromUrl || "").trim();
+      if (!chosenId) {
+        status.innerHTML = "<span class='err'>❌ Aucun ID fourni.</span>";
+        return;
+      }
+
+      // URL de base = celle saisie, sinon la page actuelle sans query
+      let base = redirectInput.value.trim();
+      if (!base) {
+        base = location.origin + location.pathname;
+      }
+
+      try {
+        const target = new URL(base, location.href);
+        target.searchParams.set("recordId", chosenId);
+
+        // (Pour l'instant on "envoie" l'ID en le passant dans l'URL puis on redirige)
+        window.location.href = target.toString();
+      } catch (e) {
+        status.innerHTML = "<span class='err'>❌ URL de redirection invalide.</span>";
+      }
+    });
+  </script>
+</body>
+</html>
