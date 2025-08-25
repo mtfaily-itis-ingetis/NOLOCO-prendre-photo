@@ -65,7 +65,7 @@
       "itis": "https://hook.eu2.make.com/otytijlggkxvuro0y7r63yb3sldhst0j"
     };
     const DEFAULT_HOOK = "";
-    const HOOK_TOKEN = ""; // optional; if used, add a filter in Make to check `token`
+    const HOOK_TOKEN = ""; // optionnel; si utilisé, filtrer `token` côté Make
     /* ----------------------------------- */
 
     // --- Read params ---
@@ -196,8 +196,9 @@
         fd.append("timestamp", new Date().toISOString());
         if (HOOK_TOKEN) fd.append("token", HOOK_TOKEN);
 
-        // fire-and-forget to avoid CORS issues
-        await fetch(HOOK_URL, { method: "POST", body: fd, mode: "no-cors", credentials: "omit", cache: "no-store" });
+        // Normal fetch now that your Webhook response returns CORS headers
+        const res = await fetch(HOOK_URL, { method: "POST", body: fd, credentials: "omit" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
 
         stopCamera();
         alert("Photo envoyée !");
