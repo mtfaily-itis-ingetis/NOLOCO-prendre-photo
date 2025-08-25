@@ -2,93 +2,126 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>Prendre une photo</title>
   <style>
-    :root{--card:#fff;--bg:#f6f7f9}
-    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:var(--bg)}
-    .wrap{max-width:520px;margin:24px auto;padding:16px}
-    .card{background:var(--card);border-radius:12px;padding:16px;box-shadow:0 2px 10px rgba(0,0,0,.05)}
-    h1{font-size:20px;margin:0 0 6px}
-    .muted{color:#6b7280;font-size:13px}
-    .idline{margin:6px 0 12px}
-    video, img{width:100%;border-radius:12px;background:#000}
+    /* Layout: full-screen camera with minimal chrome */
+    html,body{margin:0;height:100%;background:#000;font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    .stage{position:fixed;inset:0;height:100dvh;width:100vw;overflow:hidden;background:#000}
+    video, img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
     canvas{display:none}
-    .row{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
-    button{flex:1;padding:12px 14px;border-radius:10px;border:0;cursor:pointer;font-weight:600}
+
+    /* Bottom gradient for readability of controls */
+    .bottom-fade{position:absolute;left:0;right:0;bottom:0;height:32dvh;
+      background:linear-gradient(180deg,rgba(0,0,0,0) 0%,rgba(0,0,0,.55) 60%,rgba(0,0,0,.9) 100%);
+      pointer-events:none}
+
+    /* Controls */
+    .controls{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 18px);
+      display:flex;justify-content:center;align-items:center;gap:12px;padding:0 16px;z-index:5}
+    .pill{padding:12px 16px;border:0;border-radius:999px;font-weight:700;cursor:pointer}
     .primary{background:#0a84ff;color:#fff}
-    .secondary{background:#e6e8eb}
-    .hidden{display:none}
-    .ok{color:#0b8a00}.err{color:#b00020}
+    .neutral{background:rgba(255,255,255,.9);color:#111}
+    .ghost{background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.35)}
+    .shutter{
+      width:78px;height:78px;border-radius:50%;border:6px solid rgba(255,255,255,.85);
+      background:rgba(255,255,255,.92);cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.35)
+    }
+    .row{display:flex;gap:10px;align-items:center}
+    .hidden{display:none !important}
+
+    /* Center message/button if camera blocked */
+    .center-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:6}
+    .center-card{background:rgba(0,0,0,.55);backdrop-filter:blur(6px);padding:18px 20px;border-radius:12px;color:#fff}
+    .center-card button{margin-top:10px}
+
+    /* Small helper button (optional flip/fallback) */
+    .tools{position:absolute;top:calc(env(safe-area-inset-top) + 12px);right:12px;z-index:6;display:flex;gap:8px}
+    .toolbtn{padding:10px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.35);color:#fff;cursor:pointer}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <h1>Prendre une photo</h1>
-      <p class="idline">ID détecté : <strong id="rid">—</strong></p>
+  <main class="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <img id="preview" class="hidden" alt="aperçu" />
+    <canvas id="canvas"></canvas>
 
-      <video id="video" autoplay playsinline muted></video>
-      <img id="preview" class="hidden" alt="aperçu" />
-      <canvas id="canvas"></canvas>
-
-      <div class="row">
-        <button id="btnStart" class="secondary hidden">Autoriser la caméra</button>
-        <button id="btnCapture" class="primary">Capturer</button>
-        <button id="btnRetake" class="secondary hidden">Reprendre</button>
-        <button id="btnSend" class="primary hidden">Envoyer</button>
-      </div>
-
-      <input id="fileInput" type="file" accept="image/*" capture="environment" class="hidden" />
-
-      <p id="status" class="muted" style="margin-top:10px"></p>
-      <p class="muted">Astuce : sur iPhone, touchez d’abord un bouton si la caméra ne démarre pas automatiquement.</p>
+    <!-- Small utility area (kept minimal) -->
+    <div class="tools">
+      <button id="btnStart" class="toolbtn hidden">Activer la caméra</button>
     </div>
-  </div>
+
+    <div class="bottom-fade" aria-hidden="true"></div>
+
+    <!-- Live controls (before capture) -->
+    <div id="liveControls" class="controls">
+      <button id="btnCapture" class="shutter" aria-label="Capturer"></button>
+    </div>
+
+    <!-- Review controls (after capture) -->
+    <div id="reviewControls" class="controls hidden">
+      <div class="row">
+        <button id="btnRetake" class="pill neutral">Reprendre</button>
+        <button id="btnSend" class="pill primary">Envoyer</button>
+      </div>
+    </div>
+
+    <!-- Fallback file input for browsers that block getUserMedia without a gesture -->
+    <input id="fileInput" type="file" accept="image/*" capture="environment" class="hidden" />
+    
+    <!-- If permission denied, show a central prompt -->
+    <div id="blocked" class="center-overlay hidden">
+      <div class="center-card">
+        <div>Autorise l’accès à la caméra pour continuer.</div>
+        <button id="btnTryAgain" class="pill primary">Réessayer</button>
+      </div>
+    </div>
+  </main>
 
   <script>
-    // --- Lecture de l'ID dans l'URL ---
+    // --- Read recordId silently (kept for webhook use later) ---
     const qs = new URLSearchParams(location.search);
     const recordId = qs.get("recordId") || "";
-    document.getElementById("rid").textContent = recordId || "(aucun — ajoutez ?recordId=...)";
 
-    // --- Éléments UI ---
+    // --- Elements ---
     const video = document.getElementById("video");
     const canvas = document.getElementById("canvas");
     const preview = document.getElementById("preview");
+    const liveControls = document.getElementById("liveControls");
+    const reviewControls = document.getElementById("reviewControls");
     const btnStart = document.getElementById("btnStart");
     const btnCapture = document.getElementById("btnCapture");
     const btnRetake = document.getElementById("btnRetake");
     const btnSend = document.getElementById("btnSend");
     const fileInput = document.getElementById("fileInput");
-    const status = document.getElementById("status");
+    const blocked = document.getElementById("blocked");
+    const btnTryAgain = document.getElementById("btnTryAgain");
 
     let stream = null;
     let lastDataUrl = null;
 
-    // --- Démarrer la caméra ---
+    // --- Start camera ---
     async function startCamera() {
-      status.textContent = "Initialisation de la caméra…";
+      blocked.classList.add("hidden");
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
           audio: false
         });
         video.srcObject = stream;
         await video.play();
-        status.textContent = "Caméra prête.";
         btnStart.classList.add("hidden");
       } catch (e) {
-        status.innerHTML = "❗ Impossible de démarrer la caméra (" + e.message + "). Utilisez l’icône de caméra du navigateur ou le bouton ci-dessus.";
+        // Show unobtrusive prompt to try again or use fallback
         btnStart.classList.remove("hidden");
+        blocked.classList.remove("hidden");
       }
     }
-
-    // Démarrer automatiquement (si le navigateur l'autorise)
     startCamera();
     btnStart.addEventListener("click", startCamera);
+    btnTryAgain.addEventListener("click", startCamera);
 
-    // --- Capturer une image depuis la vidéo ---
+    // --- Capture frame from video ---
     function captureFrameToDataURL() {
       const w = video.videoWidth || 1280;
       const h = video.videoHeight || 720;
@@ -98,81 +131,62 @@
       return canvas.toDataURL("image/jpeg", 0.9);
     }
 
-    btnCapture.addEventListener("click", async () => {
-      // Si pas de flux (iOS sans geste), on déclenche le fallback file input
-      if (!stream || !stream.active) {
-        fileInput.click();
-        return;
-      }
-      lastDataUrl = captureFrameToDataURL();
+    // --- Live → Review ---
+    function enterReview(dataUrl) {
+      lastDataUrl = dataUrl;
       preview.src = lastDataUrl;
       preview.classList.remove("hidden");
       video.classList.add("hidden");
-      btnRetake.classList.remove("hidden");
-      btnSend.classList.remove("hidden");
-      btnCapture.classList.add("hidden");
-      status.textContent = "Aperçu prêt. Vous pouvez Reprendre ou Envoyer.";
+      liveControls.classList.add("hidden");
+      reviewControls.classList.remove("hidden");
+    }
+
+    // --- Review → Live ---
+    function backToLive() {
+      preview.classList.add("hidden");
+      video.classList.remove("hidden");
+      reviewControls.classList.add("hidden");
+      liveControls.classList.remove("hidden");
+    }
+
+    // Capture button
+    btnCapture.addEventListener("click", () => {
+      if (!stream || !stream.active) { fileInput.click(); return; }
+      enterReview(captureFrameToDataURL());
     });
 
-    // Fallback : si l’utilisateur choisit une photo via le file input (mobile)
-    fileInput.addEventListener("change", async (e) => {
+    // Fallback file chooser (mobile / strict browsers)
+    fileInput.addEventListener("change", (e) => {
       const file = e.target.files && e.target.files[0];
       if (!file) return;
       const reader = new FileReader();
-      reader.onload = () => {
-        lastDataUrl = reader.result;
-        preview.src = lastDataUrl;
-        preview.classList.remove("hidden");
-        video.classList.add("hidden");
-        btnRetake.classList.remove("hidden");
-        btnSend.classList.remove("hidden");
-        btnCapture.classList.add("hidden");
-        status.textContent = "Aperçu prêt (fichier choisi).";
-      };
+      reader.onload = () => enterReview(reader.result);
       reader.readAsDataURL(file);
     });
 
-    // --- Reprendre ---
-    btnRetake.addEventListener("click", () => {
-      preview.classList.add("hidden");
-      video.classList.remove("hidden");
-      btnRetake.classList.add("hidden");
-      btnSend.classList.add("hidden");
-      btnCapture.classList.remove("hidden");
-      status.textContent = "Caméra active.";
-    });
+    // Retake
+    btnRetake.addEventListener("click", backToLive);
 
-    // --- Arrêt caméra ---
+    // Stop camera
     function stopCamera() {
-      if (stream) stream.getTracks().forEach(t => t.stop());
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+        stream = null;
+      }
     }
 
-    // --- Fermeture intelligente de l’onglet ---
+    // Smart close
     function smartClose() {
-      // 1) Si dans un iframe (ex: Noloco), demander au parent de fermer
-      try {
-        if (window.top !== window.self) {
-          parent.postMessage({ type: "noloco-close-request", recordId }, "*");
-        }
-      } catch {}
-
-      // 2) Essayer de fermer l'onglet (autorisé si ouvert via window.open)
+      try { if (window.top !== window.self) parent.postMessage({ type:"noloco-close-request", recordId }, "*"); } catch {}
       try { window.opener = null; } catch {}
       window.close();
-
-      // 3) Fallback : revenir en arrière s'il y a un historique
-      if (history.length > 1) {
-        history.back();
-        return;
-      }
-
-      // 4) Fallback final : vider l'onglet
+      if (history.length > 1) { history.back(); return; }
       location.replace("about:blank");
     }
 
-    // --- Envoyer (pour l’instant : affiche l’ID puis ferme) ---
+    // Send (for now: show ID, then close)
     btnSend.addEventListener("click", () => {
-      if (!lastDataUrl) { status.textContent = "Prenez d’abord une photo."; return; }
+      if (!lastDataUrl) return;
       stopCamera();
       alert("ID (test) : " + (recordId || "(aucun)"));
       smartClose();
