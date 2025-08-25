@@ -5,60 +5,66 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <title>Prendre une photo</title>
   <style>
-    /* Layout: full-screen camera with minimal chrome */
     html,body{margin:0;height:100%;background:#000;font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
     .stage{position:fixed;inset:0;height:100dvh;width:100vw;overflow:hidden;background:#000}
     video, img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
     canvas{display:none}
 
-    /* Bottom gradient for readability of controls */
-    .bottom-fade{position:absolute;left:0;right:0;bottom:0;height:32dvh;
-      background:linear-gradient(180deg,rgba(0,0,0,0) 0%,rgba(0,0,0,.55) 60%,rgba(0,0,0,.9) 100%);
-      pointer-events:none}
+    /* Top overlays: name (left) + school (right) */
+    .topbar{
+      position:absolute;left:0;right:0;top:calc(env(safe-area-inset-top) + 10px);
+      display:flex;justify-content:space-between;align-items:center;gap:8px;padding:0 12px;z-index:6
+    }
+    .nameplate{
+      max-width:70vw;padding:10px 14px;border-radius:999px;
+      background:rgba(0,0,0,.45);backdrop-filter:blur(6px);
+      color:#fff;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+    }
+    .schooltag{
+      padding:8px 12px;border-radius:999px;
+      background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);
+      color:#fff;font-weight:600;white-space:nowrap;max-width:26vw;overflow:hidden;text-overflow:ellipsis
+    }
+    .hidden{display:none !important}
 
-    /* Controls */
+    /* Bottom gradient + controls */
+    .bottom-fade{position:absolute;left:0;right:0;bottom:0;height:32dvh;
+      background:linear-gradient(180deg,rgba(0,0,0,0) 0%,rgba(0,0,0,.55) 60%,rgba(0,0,0,.9) 100%);pointer-events:none}
     .controls{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 18px);
       display:flex;justify-content:center;align-items:center;gap:12px;padding:0 16px;z-index:5}
     .pill{padding:12px 16px;border:0;border-radius:999px;font-weight:700;cursor:pointer}
     .primary{background:#0a84ff;color:#fff}
     .neutral{background:rgba(255,255,255,.9);color:#111}
-    .ghost{background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.35)}
-    .shutter{
-      width:78px;height:78px;border-radius:50%;border:6px solid rgba(255,255,255,.85);
-      background:rgba(255,255,255,.92);cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.35)
-    }
+    .shutter{width:78px;height:78px;border-radius:50%;border:6px solid rgba(255,255,255,.85);
+      background:rgba(255,255,255,.92);cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.35)}
     .row{display:flex;gap:10px;align-items:center}
-    .hidden{display:none !important}
 
-    /* Center message/button if camera blocked */
+    /* Permission prompt */
     .center-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:6}
     .center-card{background:rgba(0,0,0,.55);backdrop-filter:blur(6px);padding:18px 20px;border-radius:12px;color:#fff}
     .center-card button{margin-top:10px}
-
-    /* Small helper button (optional flip/fallback) */
-    .tools{position:absolute;top:calc(env(safe-area-inset-top) + 12px);right:12px;z-index:6;display:flex;gap:8px}
-    .toolbtn{padding:10px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.35);color:#fff;cursor:pointer}
   </style>
 </head>
 <body>
   <main class="stage">
+    <!-- Top overlays -->
+    <div class="topbar">
+      <div id="nameplate" class="nameplate hidden"></div>
+      <div id="schooltag" class="schooltag hidden"></div>
+    </div>
+
     <video id="video" autoplay playsinline muted></video>
     <img id="preview" class="hidden" alt="aperçu" />
     <canvas id="canvas"></canvas>
 
-    <!-- Small utility area (kept minimal) -->
-    <div class="tools">
-      <button id="btnStart" class="toolbtn hidden">Activer la caméra</button>
-    </div>
-
     <div class="bottom-fade" aria-hidden="true"></div>
 
-    <!-- Live controls (before capture) -->
+    <!-- Live controls -->
     <div id="liveControls" class="controls">
       <button id="btnCapture" class="shutter" aria-label="Capturer"></button>
     </div>
 
-    <!-- Review controls (after capture) -->
+    <!-- Review controls -->
     <div id="reviewControls" class="controls hidden">
       <div class="row">
         <button id="btnRetake" class="pill neutral">Reprendre</button>
@@ -66,10 +72,10 @@
       </div>
     </div>
 
-    <!-- Fallback file input for browsers that block getUserMedia without a gesture -->
+    <!-- Hidden elements -->
     <input id="fileInput" type="file" accept="image/*" capture="environment" class="hidden" />
-    
-    <!-- If permission denied, show a central prompt -->
+
+    <!-- Permission prompt -->
     <div id="blocked" class="center-overlay hidden">
       <div class="center-card">
         <div>Autorise l’accès à la caméra pour continuer.</div>
@@ -79,17 +85,29 @@
   </main>
 
   <script>
-    // --- Read recordId silently (kept for webhook use later) ---
+    // --- Read params ---
     const qs = new URLSearchParams(location.search);
     const recordId = qs.get("recordId") || "";
 
-    // --- Elements ---
+    // Use separate params for first & last names. Also support common fallbacks.
+    const first = qs.get("name") || qs.get("first") || qs.get("prenom") || "";
+    const last  = qs.get("family") || qs.get("last") || qs.get("nom") || "";
+    const displayName = [first, last].filter(Boolean).join(" ");
+
+    const ecole = qs.get("ecole") || ""; // used later to route to the correct webhook
+
+    // Show overlays if provided
+    const nameplate = document.getElementById("nameplate");
+    const schooltag = document.getElementById("schooltag");
+    if (displayName) { nameplate.textContent = displayName; nameplate.classList.remove("hidden"); }
+    if (ecole) { schooltag.textContent = ecole; schooltag.classList.remove("hidden"); }
+
+    // Elements
     const video = document.getElementById("video");
     const canvas = document.getElementById("canvas");
     const preview = document.getElementById("preview");
     const liveControls = document.getElementById("liveControls");
     const reviewControls = document.getElementById("reviewControls");
-    const btnStart = document.getElementById("btnStart");
     const btnCapture = document.getElementById("btnCapture");
     const btnRetake = document.getElementById("btnRetake");
     const btnSend = document.getElementById("btnSend");
@@ -100,7 +118,7 @@
     let stream = null;
     let lastDataUrl = null;
 
-    // --- Start camera ---
+    // Start camera
     async function startCamera() {
       blocked.classList.add("hidden");
       try {
@@ -110,18 +128,14 @@
         });
         video.srcObject = stream;
         await video.play();
-        btnStart.classList.add("hidden");
-      } catch (e) {
-        // Show unobtrusive prompt to try again or use fallback
-        btnStart.classList.remove("hidden");
+      } catch {
         blocked.classList.remove("hidden");
       }
     }
     startCamera();
-    btnStart.addEventListener("click", startCamera);
     btnTryAgain.addEventListener("click", startCamera);
 
-    // --- Capture frame from video ---
+    // Capture to dataURL
     function captureFrameToDataURL() {
       const w = video.videoWidth || 1280;
       const h = video.videoHeight || 720;
@@ -131,7 +145,7 @@
       return canvas.toDataURL("image/jpeg", 0.9);
     }
 
-    // --- Live → Review ---
+    // Transitions
     function enterReview(dataUrl) {
       lastDataUrl = dataUrl;
       preview.src = lastDataUrl;
@@ -140,8 +154,6 @@
       liveControls.classList.add("hidden");
       reviewControls.classList.remove("hidden");
     }
-
-    // --- Review → Live ---
     function backToLive() {
       preview.classList.add("hidden");
       video.classList.remove("hidden");
@@ -149,13 +161,13 @@
       liveControls.classList.remove("hidden");
     }
 
-    // Capture button
+    // Capture
     btnCapture.addEventListener("click", () => {
       if (!stream || !stream.active) { fileInput.click(); return; }
       enterReview(captureFrameToDataURL());
     });
 
-    // Fallback file chooser (mobile / strict browsers)
+    // Fallback chooser
     fileInput.addEventListener("change", (e) => {
       const file = e.target.files && e.target.files[0];
       if (!file) return;
@@ -168,27 +180,22 @@
     btnRetake.addEventListener("click", backToLive);
 
     // Stop camera
-    function stopCamera() {
-      if (stream) {
-        stream.getTracks().forEach(t => t.stop());
-        stream = null;
-      }
-    }
+    function stopCamera() { if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; } }
 
     // Smart close
     function smartClose() {
-      try { if (window.top !== window.self) parent.postMessage({ type:"noloco-close-request", recordId }, "*"); } catch {}
+      try { if (window.top !== window.self) parent.postMessage({ type:"noloco-close-request", recordId, ecole }, "*"); } catch {}
       try { window.opener = null; } catch {}
       window.close();
       if (history.length > 1) { history.back(); return; }
       location.replace("about:blank");
     }
 
-    // Send (for now: show ID, then close)
+    // Send (for now: just show ID + school, then close)
     btnSend.addEventListener("click", () => {
       if (!lastDataUrl) return;
       stopCamera();
-      alert("ID (test) : " + (recordId || "(aucun)"));
+      alert("ID (test) : " + (recordId || "(aucun)") + (ecole ? " | École : " + ecole : ""));
       smartClose();
     });
   </script>
